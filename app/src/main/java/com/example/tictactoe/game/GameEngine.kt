@@ -1,8 +1,9 @@
 package com.example.tictactoe.game
 
 /**
-    Glabā 3×3 spēles laukumu un atbild par gājieniem,
-    uzvaras un neizšķirta pārbaudi.
+ * Spēles loģika.
+ * Glabā 3×3 spēles laukumu un atbild par gājieniem,
+ * uzvaras un neizšķirta pārbaudi.
  */
 
 class GameEngine {
