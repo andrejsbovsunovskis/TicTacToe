@@ -1,84 +1,88 @@
 package com.example.tictactoe.viewmodel
 
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
-import com.example.tictactoe.game.GameEngine
-import com.example.tictactoe.player.Player
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * ViewModel (UI un GameEngine)
+ * Spēles stāvokļa datuklase (UI layer)
+ */
+data class GameUiState(
+    val board: List<List<Char>> = List(3) { List(3) { ' ' } }, // 3×3 laukums
+    val status: String = "Tavs gājiens",                       // ziņa lietotājam
+    val current: Char = 'X',                                   // kurš tagad iet
+    val finished: Boolean = false                              // spēle pabeigta?
+)
+
+/**
+ * ViewModel — satur spēles loģiku un izdala UI-stāvokli caur StateFlow.
  */
 class GameViewModel : ViewModel() {
-    private val engine = GameEngine()
 
-    // Lauka stāvoklis kā LiveData, lai UI varētu uzreiz saņemt izmaiņas
-    private val _board = MutableLiveData(engine.getBoard())
-    val board: LiveData<Array<CharArray>> = _board
+    // Iekšējais stāvoklis, ko drīkst mainīt tikai ViewModel
+    private val _uiState = MutableStateFlow(GameUiState())
+    val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
 
-    // Statusa ziņa (kamēr gaida gājienu, uzvara, neizšķirts)
-    private val _status = MutableLiveData<String>()
-    val status: LiveData<String> = _status
-
-    lateinit var player1: Player
-    lateinit var player2: Player
-    private var current: Player? = null
-
-    /**
-     * Sāk jaunu spēli.
-     *
-     * @param name1 — pirmā spēlētāja vārds
-     * @param vsComputer — true PvC režīmam
-     */
-    fun startGame(name1: String, vsComputer: Boolean) {
-        player1 = Player(name1, 'X')
-        player2 = Player(
-            name = if (vsComputer) "Dators" else "Spēlētājs 2",
-            symbol = 'O',
-            isArtificial = vsComputer
+    /** Sāk jaunu spēli ar tukšu laukumu */
+    fun startGame(playerName: String, vsComputer: Boolean) {
+        _uiState.value = GameUiState(
+            status = "$playerName, tavs gājiens",
+            current = 'X'
         )
-        current = player1
-        engine.reset()
-        _board.value = engine.getBoard()
-        _status.value = "${player1.name} gājiens"
+        // Ja vajag AI — šeit var inicializēt vsComputer karodziņu
     }
 
-    /**
-     * Veic gājienu un atjauno LiveData.
-     */
-    fun makeMove(row: Int, col: Int) {
-        val sym = current!!.symbol
-        if (!engine.makeMove(row, col, sym)) return
+    /** Lietotāja vai AI gājiens (i, j) koordinātēs */
+    fun makeMove(i: Int, j: Int) {
+        val state = _uiState.value
+        if (state.finished || state.board[i][j] != ' ') return   // jau aizņemts / spēle beigusies
 
-        _board.value = engine.getBoard()
-
-        when {
-            engine.checkWin(sym) -> {
-                _status.value = "${current!!.name} ir uzvarējis!"
-            }
-            engine.isDraw() -> {
-                _status.value = "Neizšķirts!"
-            }
-            else -> {
-                // Mainām spēlētāju
-                current = if (current == player1) player2 else player1
-                _status.value = "Gājiens: ${current!!.name}"
-
-                // Ja dators – liekam viņam gājienu
-                if (current!!.name == "Dators") {
-                    current!!.computeMove(engine.getBoard())?.let { (r, c) ->
-                        makeMove(r, c)
-                    }
-                }
+        // atjaunojam laukumu
+        val newBoard = state.board.mapIndexed { row, cols ->
+            cols.mapIndexed { col, cell ->
+                if (row == i && col == j) state.current else cell
             }
         }
+
+        // vai ir uzvara?
+        val winner = checkWinner(newBoard)
+        val nextPlayer = if (state.current == 'X') 'O' else 'X'
+
+        _uiState.value = state.copy(
+            board = newBoard,
+            status = when {
+                winner != null -> "Uzvarēja $winner!"
+                newBoard.all { it.none { c -> c == ' ' } } -> "Neizšķirts"
+                else -> "Gājiens — $nextPlayer"
+            },
+            current = nextPlayer,
+            finished = winner != null || newBoard.all { it.none { c -> c == ' ' } }
+        )
+
+        // Šeit var ievietot AI gājienu, ja vsComputer = true
     }
 
-    /** Sāk jaunu spēli no nulles. */
+    /** Atiestata spēli uz sākumu */
     fun newGame() {
-        engine.reset()
-        _board.value = engine.getBoard()
-        current = player1
-        _status.value = "Jauna spēle. Gājiens: ${player1.name}"
+        _uiState.value = GameUiState()
+    }
+
+    /** Pārbauda, vai kāds ir uzvarējis; atgriež 'X'/'O', vai null */
+    private fun checkWinner(b: List<List<Char>>): Char? {
+        val lines = listOf(
+            // rindas
+            listOf(b[0][0], b[0][1], b[0][2]),
+            listOf(b[1][0], b[1][1], b[1][2]),
+            listOf(b[2][0], b[2][1], b[2][2]),
+            // kolonnas
+            listOf(b[0][0], b[1][0], b[2][0]),
+            listOf(b[0][1], b[1][1], b[2][1]),
+            listOf(b[0][2], b[1][2], b[2][2]),
+            // diagonāles
+            listOf(b[0][0], b[1][1], b[2][2]),
+            listOf(b[0][2], b[1][1], b[2][0])
+        )
+        return lines.firstOrNull { it.distinct().size == 1 && it[0] != ' ' }?.first()
     }
 }
